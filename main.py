@@ -583,8 +583,9 @@ elif down:
                 durl=get_durl(item["Id"])
                 fname,fsize=get_remote_filename_and_size(durl)
                 print durl
-                print fname
-                if(fname!=None):                    
+                print "file: "+fname
+                print "size: "+fsize
+                if(fsize!="" and fname !=""):                    
                     get_file(durl,fname,fsize,default_dpath)
                 else:
                     print "Sorry cannot get name for file try it later"               
