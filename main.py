@@ -19,7 +19,7 @@ class myURLOpener(urllib.FancyURLopener):
     def http_error_206(self, url, fp, errcode, errmsg, headers, data=None):
         pass
 
-def get_file(url,dlFile,path="."):
+def get_file(url,dlFile,fsize,path="."):
     loop = 1    
     existSize = 0
     myUrlclass = myURLOpener()
@@ -33,8 +33,9 @@ def get_file(url,dlFile,path="."):
     
     webPage = myUrlclass.open(url)
     
-    #If the file exists, but we already have the whole thing, don't download again
-    if int(webPage.headers['Content-Length']) == existSize:
+    print "Remote Size:  "+ fsize
+    print "Local Size:   "+ str(existSize)
+    if int(fsize) == existSize:
         loop = 0
         print "File already downloaded"
     
@@ -45,7 +46,7 @@ def get_file(url,dlFile,path="."):
         count=existSize/8192;
     while loop:
         data = webPage.read(8192)
-        ret_hook(count,8192,int(webPage.headers['Content-Length']))
+        ret_hook(count,8192,int(fsize))
         if not data:
             break
         outputFile.write(data)
@@ -55,9 +56,7 @@ def get_file(url,dlFile,path="."):
     webPage.close()
     outputFile.close()
     
-    for k,v in webPage.headers.items():
-        print k, "=",v
-    print "copied", numBytes, "bytes from", webPage.url
+    
 
 class TitleManager:
     
@@ -368,28 +367,40 @@ def ret_hook(block_count,block_size,total):
 
 def getfilename(info):        
         i=info.split(" ");
+        filename=""
+        length=""
+        x=0
+        for e in i:
+            if "Content-Length" in e:
+                length=i[x+1]
+                length=length.replace(" ","")
+                items=length.split('\r')
+                length=items[0]                
+            x+=1
+        
         
         for e in i:
                 if "filename=" in e:                        
                         i=e.split("=");
                         filename_with_r=i[1]
                         filename_without_r=filename_with_r.split('\r')
-                        return  filename_without_r[0]
+                        filename=  filename_without_r[0]
                         
-                        
+        return filename,length;
         
 
         
-def get_remote_filename(durl):
+def get_remote_filename_and_size(durl):
         f=urllib.urlopen(durl)
         info= str(f.info())       
-        fname=getfilename(info)        
+        fname,fsize=getfilename(info)        
         f.close()
-        return fname
+        return fname,fsize
         
         
 
 def usage():
+        print "-x  Username Password| data will be stored in pass"
         print "-p -i database | parse save.tv and store information in database"
         print "-d  date -i input_db -o output_db | extract movies from the given date from one db and add them in the next"
         print "-n name -i input_db -o output_db | extract movies from the given name from one db and add them in the next"
@@ -397,17 +408,29 @@ def usage():
         print "-l -o out_db | print download links"
         print "-s -o out_db | show_db"
 
+def ser_secrets(secrets):
+    output = open("secrets", 'wb')
+    pickle.dump(secrets, output)
+    output.close()
+def deser_secrets():
+        if os.path.exists("secrets"):
+                output = open("secrets", 'rb')
+                secrets=pickle.load(output)                
+                output.close()
+                return secrets
+        else:
+            return {'Username':'','Password':''} 
 
-user=""
-pass=""
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "spi:o:d:n:wl",[])
+    opts, args = getopt.getopt(sys.argv[1:], "xspi:o:d:n:wl",[])
 except getopt.GetoptError, err:    
     print str(err) # will print something like "option -a not recognized"
     usage()
     sys.exit(2)
-    
+
+
+
 in_db=""
 out_db=""
 parse=False
@@ -416,8 +439,14 @@ list=False
 show=False
 date=""
 name=""
+secrets=deser_secrets()
 for o, a in opts:
-    if o == "-p":
+    if o == "-x" and len(sys.argv)==4:
+        secrets["Username"]=sys.argv[2]
+        secrets["Password"]=sys.argv[3]   
+        ser_secrets(secrets)    
+        sys.exit(0) 
+    elif o == "-p":
         parse = True        
     elif o == "-w":
         down=True        
@@ -435,6 +464,12 @@ for o, a in opts:
         out_db=a;
     else:
         assert False, "unhandled option"
+secrets=deser_secrets()
+
+if secrets["Username"]=="" or secrets["Password"]=="":
+    print "missing SECRETS!!!!"
+    sys.exit(-1)
+    
 
 if parse==True and (in_db==""):
     usage();
@@ -469,7 +504,9 @@ tm=TitleManager();
 
         
 if parse:
-        login(user,pass);
+           
+
+        login(secrets["Username"],secrets["Password"]);
         i=1
         
         
@@ -511,7 +548,7 @@ elif date!="":
         tm.deser(out_db);
         tm_temp=TitleManager();
         tm_temp.deser(in_db);
-        login(user,pass);
+        login(secrets["Username"],secrets["Password"]);
         for item in tm.item_list:            
             if item["Date"]==date:
                 print item["Title"]
@@ -524,7 +561,7 @@ elif name!="":
         tm.deser(out_db);
         tm_temp=TitleManager();
         tm_temp.deser(in_db);
-        login(user,pass);
+        login(secrets["Username"],secrets["Password"]);
         for item in tm.item_list:            
             if item["Title"]==sys.argv[2]:
                 print item["Title"]
@@ -539,15 +576,18 @@ elif down:
         tm_temp.deser(out_db);        
         
         for item in tm_temp.item_list:
-                login(user,pass);
+                login(secrets["Username"],secrets["Password"]);
                 print item["Title"]
                 print item["SubTitle"]
                 print item["Date"]
                 durl=get_durl(item["Id"])
-                fname=get_remote_filename(durl)
+                fname,fsize=get_remote_filename_and_size(durl)
                 print durl
                 print fname
-                get_file(durl,fname,default_dpath)               
+                if(fname!=None):                    
+                    get_file(durl,fname,fsize,default_dpath)
+                else:
+                    print "Sorry cannot get name for file try it later"               
                 
         
             
