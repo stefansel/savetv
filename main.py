@@ -8,6 +8,10 @@ import getopt
 import os
 import sys
 import sgmllib
+#web
+#import tornado.ioloop
+#import tornado.web
+
 
 default_dpath="C:\Users\stefan\Documents\Meine Save.TV-Aufnahmen"
 
@@ -62,12 +66,17 @@ class TitleManager:
     
     
     def __init__(self, verbose=0):
-        self.current_item={'Title':"",'SubTitle':"",'Date':"",'Time':"",'Length':"",'Id':0,'Url':""}
+        self.current_item={'Title':"",'SubTitle':"",'Date':"",'Time':"",'Length':"",'Id':0,'Url':"",'Expandable':False}
         self.item_list=[]
     def add_item(self,item):
         self.item_list.append(item)
     def add_title(self,name):                
         self.current_item["Title"]=name
+    def set_expandable(self,value):                
+        #print "set_expandable"
+        self.current_item["Expandable"]=value
+    def is_expandable(self):                
+        return self.current_item["Expandable"]
     def add_sub_title(self,name):
         self.current_item["SubTitle"]=name
     def is_title_set(self):        
@@ -78,7 +87,12 @@ class TitleManager:
         self.current_item["Time"]=date
     def add_length(self,date):
         self.current_item["Length"]=date
-    
+    def get_fresh(self):
+        #print "***Fresh***"
+        print self.current_item
+        if self.current_item["Title"]!="":
+            self.item_list.append(self.current_item)
+            self.current_item={'Title':"",'SubTitle':"",'Date':"",'Time':"",'Length':"",'Id':0,'Url':"",'Expandable':False}    
     def add_url(self,url):
         self.current_item["Url"]=url
         items=url.split('?')
@@ -90,14 +104,12 @@ class TitleManager:
         for i in items:            
             if "TelecastID" == i:                
                 self.current_item["Id"]=items[x+1]
-            x+=1;
-        
-        
-        if self.current_item["Title"]!="" and self.current_item["Url"]!="":
-            self.item_list.append(self.current_item)
-            self.current_item={'Title':"",'SubTitle':"",'Date':"",'Time':"",'Length':"",'Id':0,'Url':""}
+            x+=1;       
     def print_list(self):
-            print self.item_list
+            print "##############List printing###########"
+            for item in self.item_list:
+                print item
+                
     
     def ser(self,filename='tm.dat'):
         output = open(filename, 'wb')
@@ -117,7 +129,7 @@ class MyParser(sgmllib.SGMLParser):
     savevalue=""
     def parse(self, s):
         "Parse the given string 's'."
-        self.feed(s)
+        self.feed(s)                                    
         self.close()
     
     def __init__(self, verbose=0):
@@ -129,41 +141,57 @@ class MyParser(sgmllib.SGMLParser):
         self.inside_title = 0
         self.inside_date = 0
         self.inside_state = 0
+        self.td_count=0
         self.tm=None;
     def add_tm(self,tm):
         self.tm=tm;
        
     
     def start_a(self,a):
-        if len(a)==1:
-            tag,value=a[0]
-            #if self.inside_a_element==1 and tag == "href":
-            if tag == "href" and self.inside_state==1:
+        print "start aaaaa"
+        print a
+        if len(a)>=1:
+            tag,value=a[0]            
+            if tag == "href":
                 if "TelecastID" in value:
                     print "TAG: "+tag+ "   "+value
                     self.tm.add_url(value)
-        
+            if tag == "class" and 'toggle-serial-link':
+                self.tm.set_expandable(True);
+                
+             
+        print "end aaaaa"
+      
     def end_a(self):
         print "*****end a*****"
 
     def start_tr(self,a):
-        print "////////////////////////////TR start****"
+        print "////////////////////////////TR start****"        
+        print a
+        print "////aaaaaaaaaaaaaaaaaaaaaaaaaaaa****"
         
     def end_tr(self):
         print "////////////////////////////TR END*****"
 
     def start_td(self,a):                
         print "#######td_start--------"
+        print a
         if len(a)==1:
             t=a[0];
             tag,type=t
-        if tag=='class' and type=='title':            
+        else:
+            tag=None;
+        self.td_count+=1;
+        print "self.td_count: " +str(self.td_count)
+        print a
+        
+        if  self.td_count==4:            
             print "------title_start--------"
             self.inside_title=1
         if tag=='class' and type=='state':            
             print "------state--------"
             self.inside_state= 1
-        if tag=='class' and type=='date':            
+        if  self.td_count==6:            
             print "------date--------"
             self.inside_date = 1
         
@@ -171,6 +199,8 @@ class MyParser(sgmllib.SGMLParser):
         
     def handle_endtag(self,tag,method):
         print "end tag**** "+tag
+        if tag =="tr":       
+            self.td_count=0;
         if tag =="td" and self.inside_title==1:
             print "------title_end--------"
             self.inside_title=0
@@ -182,7 +212,7 @@ class MyParser(sgmllib.SGMLParser):
             self.inside_state=0
                 
         
-    def end_td(self):        
+    def end_td(self):
         print "#######td_end--------"
         
     
@@ -193,9 +223,10 @@ class MyParser(sgmllib.SGMLParser):
     
     def handle_data(self, data):
         "Handle the textual 'data'."
-
+        if "Lost" in data:
+            print data
         if self.inside_title==1:
-            #print "title++++++++ "+data;
+            print "title++++++++ "+data;            
             
             cleaned_data=data.replace("\r"," ")
             cleaned_data=cleaned_data.replace("\n"," ")
@@ -204,19 +235,22 @@ class MyParser(sgmllib.SGMLParser):
             cleaned_data=cleaned_data.replace("  "," ")
             while l!=len(cleaned_data):
                 l=len(cleaned_data)
-                cleaned_data=cleaned_data.replace("  "," ")
-                
-                
-            
+                cleaned_data=cleaned_data.replace("  "," ")            
                     
             
-            if len(cleaned_data)>1:
-                if self.tm.is_title_set()==False:
-                    print "clean title++++++++ "+cleaned_data;                            
-                    self.tm.add_title(cleaned_data);
+            if len(cleaned_data)>1:                                
+                if self.tm.is_expandable()==False:
+                    if self.tm.is_title_set()==False:
+                        print "clean title++++++++ "+cleaned_data;                                                   
+                        self.tm.add_title(cleaned_data);                        
+                    else:                        
+                        print "clean subtitle++++++++ "+cleaned_data;                            
+                        self.tm.add_sub_title(cleaned_data);
                 else:
-                    print "clean subtitle++++++++ "+cleaned_data;                            
-                    self.tm.add_sub_title(cleaned_data);
+                    self.tm.add_title(cleaned_data);
+                    self.tm.get_fresh()
+                
+                
                 
         if self.inside_date==1:
             print "date++++++++ "+data
@@ -231,10 +265,12 @@ class MyParser(sgmllib.SGMLParser):
             if(len(items)==3):
                 self.tm.add_date(items[0])
                 self.tm.add_time(items[1])
-                self.tm.add_length(items[2])
-                            
+                self.tm.add_length(items[2])                    
+                self.tm.get_fresh()            
+        """                    
         if self.inside_state==1:
             print "state++++++++ "+data
+        """
             
             
 
@@ -300,25 +336,37 @@ def get_TelecastID(str):
             
     return ""
     
-
-    
+g_count=0
+def get_settings():
+    global g_count
+    request = urllib2.Request("http://www.save.tv/STV/M/obj/user/usEdit.cfm", None, header)
+    url = urllib2.urlopen(request)    
+    html = url.read()    
+    f=open("set_"+str(g_count)+".txt","w")
+    f.write(html)
+    g_count+=1;
+    f.close() 
+    url.close()
 
     
 def get_durl(TelecastID):
     mobile='4004_1279453091276'
     highdef='2209_1279380457512'
     flash="4728_1290356320883"    
-    param0='number:'+TelecastID
+    param0='number:'+str(TelecastID)
     durl=""
+    print param0
 #GetAdFreeAvailable
 #GetDownloadUrl
 #number:0 means high qual
 #number:1 mean low qual
+    
                                 
     data=urllib.urlencode({'ajax':'true','c0-id':flash,'clientAuthenticationKey':'','c0-methodName':'GetDownloadUrl','c0-param0':param0,'c0-param1':'number:0','c0-param2':'boolean:true','c0-scriptName':'null','callCount':1});
     request = urllib2.Request("http://www.save.tv/STV/M/obj/cRecordOrder/croGetDownloadUrl.cfm?null.GetDownloadUrl", data, header)
     url = urllib2.urlopen(request)
     html = url.read()    
+    print html
     split =html.split(',')
     for line in split:
         if "http://" in line:        
@@ -326,7 +374,31 @@ def get_durl(TelecastID):
             durl=durl.strip('\'')
             return  durl
     url.close()
+    
     return durl
+
+""""
+ajax=true&clientAuthenticationKey=&callCount=1&c0-scriptName=null&c0-methodName=GetVideoEntries&c0-id=345_1324907842646 &c0-param0=string:1&c0-param1=string:&c0-param2=string:1&c0-param3=string:96987&c0-param4=string:1&c0-param5=string:0&c0-param6=string:1&c0-param7=string:0&c0-param8=string:1&c0-param9=string:&c0-param10=string:Futurama&c0-param11=string:19&c0-param12=string:toggleSerial&xml=true&extend=function (object) { for (property in object) { this[property] = object[property]; } return this; }&
+ajax=true&clientAuthenticationKey=&callCount=1&c0-scriptName=null&c0-methodName=GetVideoEntries&c0-id=5214_1324910267751&c0-param0=string:1&c0-param1=string:&c0-param2=string:1&c0-param3=string:96987&c0-param4=string:1&c0-param5=string:0&c0-param6=string:1&c0-param7=string:0&c0-param8=string:1&c0-param9=string:&c0-param10=string:Tatort&c0-param11=string:18&c0-param12=string:toggleSerial&xml=true&extend=function (object) {
+"""
+
+def get_expand_data(str):
+    
+    
+    #ajax=true&clientAuthenticationKey= &callCount=1&c0-scriptName=null&c0-methodName=GetVideoEntries&c0-id=345_1324907842646&c0-param0=string:1& c0-param1=string:&c0-param2=string:1&c0-param3=string:96987&c0-param4=string:1&c0-param5=string:0&c0-param6=string:1&c0-param7=string:0&c0-param8=string:1&c0-param9=string:&c0-param10=string:Futurama&c0-param11=string:19&c0-param12=string:toggleSerial&xml=true&extend=function (object) { for (property in object) { this[property] = object[property]; } return this; }&
+    data=urllib.urlencode({'ajax':'true','clientAuthenticationKey':'','callCount':'1','c0-scriptName':'null','c0-methodName':'GetVideoEntries','c0-id':'345_1324907842646','c0-param0':'string:1','c0-param1':'string','c0-param2':'string:1','c0-param3':'string:96987','c0-param4':'string:1','c0-param5':'string:0','c0-param6':'string:1','c0-param7':'string:0','c0-param8':'string:1','c0-param9':'string:','c0-param10':'string:'+str,'c0-param11':'string:19','c0-param12':'string:toggleSerial','xml':'True'});                                    
+    #data=urllib.urlencode({'ajax':'true','c0-id':flash,'clientAuthenticationKey':'','c0-methodName':'GetDownloadUrl','c0-param0':param0,'c0-param1':'number:0','c0-param2':'boolean:true','c0-scriptName':'null','callCount':1});
+    print "zzzzzzzzzzzzzzzzzz"
+    request = urllib2.Request("http://www.save.tv/STV/M/obj/user/usShowVideoArchiveLoadEntries.cfm?null.GetVideoEntries", data, header)
+    url = urllib2.urlopen(request)
+    html = url.read()    
+    print html    
+    url.close()
+    print "zzzzzzzzzzzzzzzzzz"
+    return html
+    
+    #return durl
+
 
 def login(id,passw):
     global header
@@ -350,7 +422,7 @@ def getArchive(page):
         request = urllib2.Request("http://www.save.tv/STV/M/obj/user/usShowVideoArchive.cfm", data, header)
         url = urllib2.urlopen(request)
         #html = url.readlines()
-        html = url.read()
+        html = url.read()        
         url.close()
         return html
 
@@ -404,6 +476,7 @@ def usage():
         print "-p -i database | parse save.tv and store information in database"
         print "-d  date -i input_db -o output_db | extract movies from the given date from one db and add them in the next"
         print "-n name -i input_db -o output_db | extract movies from the given name from one db and add them in the next"
+        print "-u  -i input_db -o output_db | extract non sub title movies from the given name from one db and add them in the next"
         print "-w -o out_db | download movies"
         print "-l -o out_db | print download links"
         print "-s -o out_db | show_db"
@@ -422,21 +495,28 @@ def deser_secrets():
             return {'Username':'','Password':''} 
 
 
+
+
 try:
-    opts, args = getopt.getopt(sys.argv[1:], "xspi:o:d:n:wl",[])
+    opts, args = getopt.getopt(sys.argv[1:], "uxspi:o:d:n:wl",[])
 except getopt.GetoptError, err:    
     print str(err) # will print something like "option -a not recognized"
     usage()
     sys.exit(2)
 
-
-
+"""
+secrets=deser_secrets()
+login(secrets["Username"],secrets["Password"]);
+get_settings()
+sys.exit(1)
+"""
 in_db=""
 out_db=""
 parse=False
 down=False
 list=False
 show=False
+subtitle=False
 date=""
 name=""
 secrets=deser_secrets()
@@ -459,7 +539,9 @@ for o, a in opts:
     elif o in "-l":
         list=True
     elif o in "-s":
-        show=True    
+        show=True
+    elif o in "-u":
+        subtitle=True    
     elif o in "-o":
         out_db=a;
     else:
@@ -480,6 +562,9 @@ if show==True and (out_db==""):
     sys.exit(2)
 
 if date!="" and (in_db=="" or out_db==""):
+    usage();
+    sys.exit(2)
+if subtitle and (in_db=="" or out_db==""):
     usage();
     sys.exit(2)
 
@@ -513,9 +598,10 @@ if parse:
         while 1:
                 print "Parsing page "+str(i)+" !"
                 html=getArchive(i)        
-                html2=getArchive(i+1)     
-                print    len(html)
-                print    len(html2)
+                print html
+                html2=getArchive(i+1)                
+                #print    len(html)
+                #print    len(html2)
                 if len(html)==len(html2):
                         break;
                 myparser = MyParser()
@@ -526,8 +612,17 @@ if parse:
                 myparser.add_tm(tm);
                 myparser.parse(html2)                
                 i=i+1
-        
-      
+                break;
+        print "+++++++++++++++++++finish"
+        tm.print_list();
+        if tm!=None:
+            for item in tm.item_list:
+                print item
+                if item["Expandable"]:        
+                    html=get_expand_data(item["Title"])
+                    html=html.replace("\\","")                                         
+                    myparser.parse(html)
+                    tm.item_list.remove(item)        
         tm.print_list();
         tm.ser(in_db);
         
@@ -543,6 +638,25 @@ elif show:
             print "Date: "+item["Date"]
             print "Len: "+item["Length"]
             print "############################"
+
+elif subtitle:     
+        tm.deser(out_db);
+        tm_temp=TitleManager();
+        tm_temp.deser(in_db);
+        login(secrets["Username"],secrets["Password"]);
+        for item in tm.item_list:            
+            if item["SubTitle"]=="":
+                b_not_add=False
+                for temp_item in tm_temp.item_list:
+                    if item["Title"]==temp_item["Title"]:
+                        b_not_add=True
+                if b_not_add==False:
+                    print item["Title"]                
+                    print item["Date"]                
+                    tm_temp.add_item(item);
+        tm_temp.ser(in_db);
+
+
 
 elif date!="":
         tm.deser(out_db);
@@ -563,7 +677,7 @@ elif name!="":
         tm_temp.deser(in_db);
         login(secrets["Username"],secrets["Password"]);
         for item in tm.item_list:            
-            if item["Title"]==sys.argv[2]:
+            if sys.argv[2] in item["Title"]:
                 print item["Title"]
                 print item["SubTitle"]
                 print item["Date"]                
@@ -574,14 +688,17 @@ elif name!="":
 elif down:
         tm_temp=TitleManager();        
         tm_temp.deser(out_db);        
-        
+        login(secrets["Username"],secrets["Password"]);
         for item in tm_temp.item_list:
-                login(secrets["Username"],secrets["Password"]);
+                #login(secrets["Username"],secrets["Password"]);                
                 print item["Title"]
                 print item["SubTitle"]
                 print item["Date"]
                 durl=get_durl(item["Id"])
+                print "Download url: "+durl
                 fname,fsize=get_remote_filename_and_size(durl)
+                #if "375119" not in fname:
+                get_settings()
                 print durl
                 print "file: "+fname
                 print "size: "+fsize
